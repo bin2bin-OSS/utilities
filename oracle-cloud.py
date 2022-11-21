@@ -5,16 +5,19 @@ system('clear')
 
 BASE_API_URL = "https://vmkbqkse7k.execute-api.us-east-1.amazonaws.com"
 CLOUD_INIT_TEMPLATE = """
-    #cloud-config
-    disable_root: false
-    swap:
-        filename: /swap.img
-        size: "auto"
-        maxsize: 4294967296
-    users:
-        - name: root
-            lock_passwd: true
-            ssh_authorized_keys:
+#cloud-config
+
+disable_root: false
+
+swap:
+    filename: /swap.img
+    size: "auto"
+    maxsize: 4294967296
+
+users:
+    - name: root
+        lock_passwd: true
+        ssh_authorized_keys:
             - {ssh_public_key}
 """
 
