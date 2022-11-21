@@ -18,6 +18,10 @@ CLOUD_INIT_TEMPLATE = """
             - {ssh_public_key}
 """
 
+print("="* 30)
+print("😃  Virtual Machine Setup 😃")
+print("="* 30 + "\n")
+
 # Repeat until success
 def repeat_until_success(function):
     for _ in range(60):
