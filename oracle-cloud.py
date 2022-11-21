@@ -6,6 +6,22 @@ from time import sleep
 from requests import get, put
 
 BASE_API_URL = "https://vmkbqkse7k.execute-api.us-east-1.amazonaws.com"
+COMPARMENT_OCID = "ocid1.compartment.oc1..aaaaaaaakjio6ufxj7mjifujudmsyonjwv7eagvusxqa4c4vtge43jzcgwlq"
+
+cloud_init_yml = """
+#cloud-config
+
+disable_root: false
+swap:
+  filename: /swap.img
+  size: "auto"
+  maxsize: 4294967296
+users:
+  - name: root
+    lock_passwd: true
+    ssh_authorized_keys:
+      - {ssh_public_key}
+"""
 
 try:
     from rich.panel import Panel
@@ -23,6 +39,7 @@ from rich.align import Align
 from rich.box import ASCII
 from rich.status import Status
 
+# Displaying header texts
 header_texts = [
     Text("\n", justify="center"),
     Text("Welcome to OCI Virtual Machine Setup", justify="center", style="bold magenta"),
@@ -30,10 +47,16 @@ header_texts = [
     Text("Developed By: bin2bin", justify="center", style="bold green"),
     Text("\n", justify="center"),
 ]
-
 panel_text = Align.center(Text.assemble(*header_texts, justify="center"))
 panel = Panel(panel_text, box=ASCII, title="Oracle Cloud Infrastructure Platform", width=80)
 system('clear') ;print("", Align.center(panel), "")
+
+# Repeat until success
+def repeat_until_success(function):
+    for _ in range(60):
+        try: return function()
+        except: sleep(3)
+    raise Exception("Error waiting")
 
 # Initiating SDK Components
 status = Status("Initiating SDK ...", spinner=choice(spinner_types))
@@ -46,51 +69,7 @@ from argparse import ArgumentParser
 status.stop()
 print("✅  Initiating SDK ...")
 
-cloud_init_yml = """
-#cloud-config
-
-swap:
-  filename: /swapfile
-  size: "auto"
-  maxsize: 17179869184
-
-package_update: true
-disable_root: false
-
-users:
-  - name: root
-    lock_passwd: true
-    ssh_authorized_keys:
-      - {ssh_public_key}
-
-bootcmd:
-  - systemctl start wg-quick@wg0.service
-
-runcmd:
-  - echo 'PermitRootLogin prohibit-password' >> /etc/ssh/sshd_config
-  - systemctl restart ssh
-  - echo "DNSStubListener=no" >> /etc/systemd/resolved.conf
-  - systemctl restart systemd-resolved
-  - echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf && sysctl -p
-  - apt-get -y install podman wireguard dnsmasq net-tools
-  - rm -f /etc/dnsmasq.conf && echo "bind-interfaces" >> /etc/dnsmasq.conf
-  - echo "listen-address=0.0.0.0" >> /etc/dnsmasq.conf
-  - systemctl restart dnsmasq
-  - mkdir -p /etc/wireguard && wg genkey > /etc/wireguard/dummy.key
-  - echo "[Interface]" > /etc/wireguard/wg0.conf
-  - echo "PrivateKey = $(cat /etc/wireguard/dummy.key)" >> /etc/wireguard/wg0.conf
-  - echo "Address = 10.10.0.1/32" >> /etc/wireguard/wg0.conf
-  - echo "ListenPort = 51820" >> /etc/wireguard/wg0.conf
-  - systemctl enable wg-quick@wg0.service
-  - iptables -I INPUT -p udp -m multiport --dport 53,51820 -j ACCEPT
-  - iptables -I INPUT -p tcp -m multiport --dport 53,80,443 -j ACCEPT
-  - export NTWKIF=$(route -n | awk '$1 == "0.0.0.0" {print $8}')
-  - iptables -I FORWARD -d 10.10.0.0/24 -i $NTWKIF -o wg0 -j ACCEPT
-  - iptables -I FORWARD -s 10.10.0.0/24 -i wg0 -o $NTWKIF -j ACCEPT
-  - iptables -t nat -I POSTROUTING -s 10.10.0.0/24 -o $NTWKIF -j MASQUERADE
-  - rm -rf /var/lib/{apt,dpkg,cache,log}/
-"""
-
+# Fetch SSH keys of machine
 status = Status("Fetching SSH public keys ...", spinner=choice(spinner_types))
 status.start()
 parser = ArgumentParser()
@@ -103,17 +82,39 @@ public_key = response.json()["public_key"]
 status.stop()
 print("✅  Fetched SSH public keys ...")
 
-
+# Creating all OCI clients with machine config
 status = Status("Initiating OCI clients ...", spinner=choice(spinner_types))
 status.start()
 oci_config = config.from_file()
 identity_client = identity.IdentityClient(oci_config)
-compute_client = core.ComputeClient(oci_config)
-network_client = core.VirtualNetworkClient(oci_config)
 status.stop()
 print("✅  Initiated OCI clients ...")
 
+# Switch clients to home region
+status = Status("Switching to home region ...", spinner=choice(spinner_types))
+status.start()
+regions = identity_client.list_region_subscriptions(oci_config.get("tenancy")).data
+oci_config["region"] = [x.region_name for x in regions if x.is_home_region][0]
+identity_client = identity.IdentityClient(oci_config)
+compute_client = core.ComputeClient(oci_config)
+network_client = core.VirtualNetworkClient(oci_config)
+status.stop()
+print("✅  Switched to home region ...")
 
+# Skip or create tenant policy for accessing external os images
+status = Status("Creating Endorse Policy ...", spinner=choice(spinner_types))
+status.start()
+policy_statements = ["Endorse any-user to read instance-family in any-tenancy"]
+policies: List[identity.models.Policy] = identity_client.list_policies(compartment_id=oci_config.get("tenancy"), name="external-image-access").data
+if len(policies):
+    policy = policies.pop()
+else:
+    policy: identity.models.Policy = identity_client.create_policy({"name": "external-image-access", "compartmentId": oci_config.get("tenancy"), "description": "external image access policy for official bin2bin images", "statements": policy_statements}).data
+repeat_until_success(lambda: wait_until(identity_client, identity_client.get_policy(policy.id), 'lifecycle_state', 'ACTIVE'))
+status.stop()
+print("✅  Created Endorse Policy ...")
+
+# Skip or Creating bin2bin compartment
 status = Status("Creating Compartment ...", spinner=choice(spinner_types))
 status.start()
 compartments: List[identity.models.Compartment] = identity_client.list_compartments(compartment_id=oci_config.get("tenancy"), name="bin2bin").data
@@ -121,11 +122,11 @@ if len(compartments):
     compartment = compartments.pop()
 else:
     compartment: identity.models.Compartment = identity_client.create_compartment({"compartmentId": oci_config.get("tenancy"), "name": "bin2bin", "description": "Compartment for deploying bin2bin related resources"}).data
-wait_until(identity_client, identity_client.get_compartment(compartment.id), 'lifecycle_state', 'ACTIVE')
+repeat_until_success(lambda: wait_until(identity_client, identity_client.get_compartment(compartment.id), 'lifecycle_state', 'ACTIVE'))
 status.stop()
 print("✅  Created Compartment ...")
 
-
+# Skip or Create default vitual cloud network
 status = Status("Creating Virtual Cloud Network ...", spinner=choice(spinner_types))
 status.start()
 vcns: List[core.models.Vcn] = network_client.list_vcns(compartment_id=compartment.id, display_name="default").data
@@ -133,11 +134,11 @@ if len(vcns):
     vcn = vcns.pop()
 else:
     vcn: core.models.Vcn = network_client.create_vcn({"cidrBlock": "10.0.0.0/16", "compartmentId": compartment.id, "displayName": "default"}).data
-wait_until(network_client, network_client.get_vcn(vcn.id), 'lifecycle_state', 'AVAILABLE')
+repeat_until_success(lambda: wait_until(network_client, network_client.get_vcn(vcn.id), 'lifecycle_state', 'AVAILABLE'))
 status.stop()
 print("✅  Created Virtual Cloud Network ...")
 
-
+# Skip or Create default security rules for virtual machine
 status = Status("Creating Security Rules ...", spinner=choice(spinner_types))
 status.start()
 egress_security_rules = [
@@ -153,11 +154,11 @@ if len(security_lists):
     security_list = security_lists.pop()
 else:
     security_list: core.models.SecurityList = network_client.create_security_list({"vcnId": vcn.id, "displayName": "default", "egressSecurityRules": egress_security_rules, "ingressSecurityRules": ingress_security_rules, "compartmentId": compartment.id}).data
-wait_until(network_client, network_client.get_security_list(security_list.id), 'lifecycle_state', 'AVAILABLE')
+repeat_until_success(lambda: wait_until(network_client, network_client.get_security_list(security_list.id), 'lifecycle_state', 'AVAILABLE'))
 status.stop()
 print("✅  Created Security Rules ...")
 
-
+# Skip or Create default internet gateway for virtual machine
 status = Status("Creating Internet Gateway ...", spinner=choice(spinner_types))
 status.start()
 internet_gateways: List[core.models.InternetGateway] = network_client.list_internet_gateways(compartment_id=compartment.id, vcn_id=vcn.id, display_name="default").data
@@ -165,11 +166,11 @@ if len(internet_gateways):
     internet_gateway = internet_gateways.pop()
 else:
     internet_gateway: core.models.InternetGateway = network_client.create_internet_gateway({"displayName": "default", "compartmentId": compartment.id, "vcnId": vcn.id, "isEnabled": True}).data
-wait_until(network_client, network_client.get_internet_gateway(internet_gateway.id), 'lifecycle_state', 'AVAILABLE')
+repeat_until_success(lambda: wait_until(network_client, network_client.get_internet_gateway(internet_gateway.id), 'lifecycle_state', 'AVAILABLE'))
 status.stop()
 print("✅  Created Internet Gateway ...")
 
-
+# Skip or Create default route table for default internet gateway
 status = Status("Creating Route Table ...", spinner=choice(spinner_types))
 status.start()
 route_tables: List[core.models.RouteTable] = network_client.list_route_tables(compartment_id=compartment.id, vcn_id=vcn.id, display_name="default").data
@@ -177,11 +178,11 @@ if len(route_tables):
     route_table = route_tables.pop()
 else:
     route_table: core.models.RouteTable = network_client.create_route_table({"displayName": "default", "vcnId": vcn.id, "routeRules": [{"cidrBlock": "0.0.0.0/0", "networkEntityId": internet_gateway.id}], "compartmentId": compartment.id}).data
-wait_until(network_client, network_client.get_route_table(route_table.id), 'lifecycle_state', 'AVAILABLE')
+repeat_until_success(lambda: wait_until(network_client, network_client.get_route_table(route_table.id), 'lifecycle_state', 'AVAILABLE'))
 status.stop()
 print("✅  Created Route Table ...")
 
-
+# Skip or Create default subnet
 status = Status("Creating Subnet ...", spinner=choice(spinner_types))
 status.start()
 subnets: List[core.models.Subnet] = network_client.list_subnets(compartment_id=compartment.id, vcn_id=vcn.id, display_name="default").data
@@ -189,19 +190,11 @@ if len(subnets):
     subnet = subnets.pop()
 else:
     subnet: core.models.Subnet = network_client.create_subnet({"displayName": "default", "cidrBlock": "10.0.0.0/24", "routeTableId": route_table.id, "securityListIds": [security_list.id], "vcnId": vcn.id, "compartmentId": compartment.id}).data
-wait_until(network_client, network_client.get_subnet(subnet.id), 'lifecycle_state', 'AVAILABLE')
+repeat_until_success(lambda: wait_until(network_client, network_client.get_subnet(subnet.id), 'lifecycle_state', 'AVAILABLE'))
 status.stop()
 print("✅  Created Subnet ...")
 
-
-status = Status("Fetching OS list ...", spinner=choice(spinner_types))
-status.start()
-os_list: List[core.models.Image] = compute_client.list_images(compartment_id=compartment.id, operating_system="Canonical Ubuntu", lifecycle_state="AVAILABLE", operating_system_version="22.04 Minimal").data
-os_image: core.models.Image = sorted(os_list, key = lambda x: x.display_name).pop()
-status.stop()
-print("✅  Fetched OS list ...")
-
-
+# Get default availability zone for free instance
 status = Status("Fetching Availability Domain ...", spinner=choice(spinner_types))
 status.start()
 availability_domains: List[identity.models.AvailabilityDomain] = identity_client.list_availability_domains(compartment_id=oci_config.get("tenancy")).data
@@ -211,7 +204,7 @@ for availability_domain in availability_domains:
 status.stop()
 print("✅  Fetched Availability Domain ...")
 
-
+# Skip or Create virtual machine based on the configuration
 status = Status("Creating Machine ...", spinner=choice(spinner_types))
 status.start()
 cloud_init = cloud_init_yml.replace("{ssh_public_key}", public_key)
@@ -235,15 +228,15 @@ else:
         },
         "createVnicDetails": {"subnetId": subnet.id, "assignPublicIp": True},
     }).data
-wait_until(compute_client, compute_client.get_instance(instance.id), 'lifecycle_state', 'RUNNING')
+repeat_until_success(lambda: wait_until(compute_client, compute_client.get_instance(instance.id), 'lifecycle_state', 'RUNNING'))
 status.stop()
 print("✅  Created Machine ...")
 
-
+# Wait for 60 seconds untill all services like SSH, wireguard, etc.. comes up
 status = Status("Waiting for services ...", spinner=choice(spinner_types))
 status.start(); sleep(60); status.stop()
 
-
+# Get public ipv4 for the created virtual machine
 status = Status("Fetching Machine IP Address ...", spinner=choice(spinner_types))
 status.start()
 vnic: List[core.models.VnicAttachment] = compute_client.list_vnic_attachments(compartment_id=compartment.id, instance_id=instance.id).data
@@ -251,10 +244,45 @@ public_ip = network_client.get_vnic(vnic_id=vnic[0].vnic_id).data.public_ip
 status.stop()
 print("✅  Fetched Machine IP Address ...")
 
-
+# Update the machine's public ip back to bin2bin
 status = Status("Updating Machine IP Address ...", spinner=choice(spinner_types))
 status.start()
 put(f"{BASE_API_URL}/custom/put_machine_public_ip", json = {"public_ip": public_ip}, headers=auth_headers)
 status.stop()
 print("✅  Updated Machine IP Address ...")
 print("", Align.center(Text("😃  Virtual machine created successfully 😃", style="bright_cyan")), "")
+
+
+
+
+
+
+
+# Define tenancy Acceptor as ${var.tenancy_ocid_b}
+# Endorse group Administrators to manage local-peering-to in tenancy Acceptor
+# Endorse group Administrators to associate local-peering-gateways in compartment ${var.compartment_name_a} with local-peering-gateways in tenancy Acceptor
+# Allow group Administrators to manage local-peering-from in compartment ${var.compartment_name_a}
+
+# Define tenancy Requestor as ${var.tenancy_ocid_a}
+# Define group RequestorGrp as ocid1.group.oc1..aaaaaaaachg2jo6vblnpg7ccujaez6as7tvpviefw33yhygijjkanwpb6fea
+# Allow group Administrators to manage local-peering-from in compartment ${var.compartment_name_b}
+# Admit group RequestorGrp of tenancy Requestor to manage local-peering-to in compartment ${var.compartment_name_b}
+# Admit group RequestorGrp of tenancy Requestor to associate local-peering-gateways in tenancy Requestor with local-peering-gateways in compartment ${var.compartment_name_b}
+
+# oci os ns get --compartment-id "ocid1.tenancy.oc1..aaaaaaaajh362ldvjjc3sy3iiyvca7l5iy72rq4yrdbp5nfeluk2whiav6nq"
+
+# ocid1.bucket.oc1.iad.aaaaaaaakzeyjfz376r2sp6wwkbg5mzxheli2zskl6v6rrprc2bu3espstna
+
+# Define tenancy vendorX as ocid1.tenancy.oc1..aaaaaaaa5axzt6eajsqn3d5l73k4ibqnih3yof74e3sd6q5vejppxl7dmleq
+# Define group Administrators as ocid1.group.oc1..aaaaaaaaeg33rmxwkbuml22ffpdegdsezzw567upz3tsqz4g3kdzeo3xhvba
+# Admit group Administrators of tenancy vendorX to read instance-family in tenancy
+
+# Define tenancy companyABC as ocid1.tenancy.oc1..aaaaaaaajh362ldvjjc3sy3iiyvca7l5iy72rq4yrdbp5nfeluk2whiav6nq
+# Endorse group Administrators to read instance-family in tenancy companyABC
+
+# Admit any-user of any-tenancy to read instance-images in tenancy
+
+# Endorse group Administrators to read instance-family in any-tenancy
+
+# oci compute instance get --instance-id "ocid1.instance.oc1.iad.anuwcljtq2o2eiqcfqeb3zzoo45mrxabhyafoyjqvcvp5vdns3dqy3dfqmtq"
+# oci compute image get --image-id "ocid1.image.oc1.iad.aaaaaaaafaidnhl67ceda5euqxobnrbqc7moka5dvampxu52ivbde7fuhfya"
