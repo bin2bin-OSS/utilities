@@ -24,8 +24,8 @@ users:
 runcmd:
   - echo "PermitRootLogin prohibit-password" >> /etc/ssh/sshd_config
   - systemctl restart ssh
-  - mkdir -p "/scripts"
-  - curl "https://raw.githubusercontent.com/bin2bin-OSS/utilities/master/system-stats.py" -o "/scripts/system-stats.py"
+  - mkdir -p "/utils"
+  - curl "https://raw.githubusercontent.com/bin2bin-OSS/utilities/master/system-stats.py" -o "/utils/system.py"
   - echo "DNSStubListener=no" >> /etc/systemd/resolved.conf
   - systemctl restart systemd-resolved
   - echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf && sysctl -p
