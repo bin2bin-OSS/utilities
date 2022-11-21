@@ -8,22 +8,45 @@ CLOUD_INIT_TEMPLATE = """
 #cloud-config
 
 disable_root: false
+package_update: true
 
 swap:
-    filename: /swap.img
-    size: "auto"
-    maxsize: 4294967296
+  filename: /swapfile
+  size: "auto"
+  maxsize: 4294967296
 
 users:
-    - name: root
-        lock_passwd: true
-        ssh_authorized_keys:
-            - {ssh_public_key}
+  - name: root
+    lock_passwd: true
+    ssh_authorized_keys:
+      - {ssh_public_key}
+
+runcmd:
+  - echo 'PermitRootLogin prohibit-password' >> /etc/ssh/sshd_config
+  - systemctl restart ssh
+  - echo "DNSStubListener=no" >> /etc/systemd/resolved.conf
+  - systemctl restart systemd-resolved
+  - echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf && sysctl -p
+  - apt-get -y install podman wireguard dnsmasq net-tools
+  - rm -f /etc/dnsmasq.conf && echo "bind-interfaces" >> /etc/dnsmasq.conf
+  - echo "listen-address=0.0.0.0" >> /etc/dnsmasq.conf
+  - systemctl restart dnsmasq
+  - mkdir -p /etc/wireguard && wg genkey > /etc/wireguard/dummy.key
+  - echo "[Interface]" > /etc/wireguard/wg0.conf
+  - echo "PrivateKey = $(cat /etc/wireguard/dummy.key)" >> /etc/wireguard/wg0.conf
+  - echo "Address = 10.10.0.1/32" >> /etc/wireguard/wg0.conf
+  - echo "ListenPort = 51820" >> /etc/wireguard/wg0.conf
+  - systemctl enable wg-quick@wg0.service
+  - iptables -I INPUT -p udp -m multiport --dport 53,51820 -j ACCEPT
+  - iptables -I INPUT -p tcp -m multiport --dport 53,80,443 -j ACCEPT
+  - export NTWKIF=$(route -n | awk '$1 == "0.0.0.0" {print $8}')
+  - iptables -I FORWARD -d 10.10.0.0/24 -i $NTWKIF -o wg0 -j ACCEPT
+  - iptables -I FORWARD -s 10.10.0.0/24 -i wg0 -o $NTWKIF -j ACCEPT
+  - iptables -t nat -I POSTROUTING -s 10.10.0.0/24 -o $NTWKIF -j MASQUERADE
+  - rm -rf /var/lib/{apt,dpkg,cache,log}/
 """
 
-print("="* 30)
-print("😃  Virtual Machine Setup 😃")
-print("="* 30 + "\n")
+print("="* 30 + "\n😃  Virtual Machine Setup 😃\n" + "="* 30 + "\n")
 
 # Repeat until success
 def repeat_until_success(function):
@@ -160,15 +183,12 @@ availability_domains: List[identity.models.AvailabilityDomain] = identity_client
 for availability_domain in availability_domains:
     shapes: List[core.models.Shape] = compute_client.list_shapes(oci_config.get("tenancy"), availability_domain = availability_domain.name).data
     if len([x for x in shapes if x.shape == "VM.Standard.E2.1.Micro"]): 
-        print("✅  Fetched Availability Domain ...")
-        break
+        print("✅  Fetched Availability Domain ..."); break
 
 # Switch clients to home region
 print("🌼  Fetching OS image ...", end="\r")
-COMPARMENT_OCID = "ocid1.compartment.oc1..aaaaaaaakjio6ufxj7mjifujudmsyonjwv7eagvusxqa4c4vtge43jzcgwlq"
-os_images = compute_client.list_images(COMPARMENT_OCID, operating_system="Canonical Ubuntu").data
-os_images = sorted(os_images, key=lambda x:x.time_created)
-os_image: core.models.Image = [x for x in os_images if x.compartment_id == COMPARMENT_OCID].pop()
+os_images = compute_client.list_images(compartment.id, operating_system="Canonical Ubuntu").data
+os_image: core.models.Image = sorted(os_images, key=lambda x:x.time_created).pop()
 print("✅  Fetched OS image ...", end="\r")
 
 # Skip or Create virtual machine based on the configuration
