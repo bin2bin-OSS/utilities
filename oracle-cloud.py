@@ -190,8 +190,8 @@ for availability_domain in availability_domains:
 
 # Switch clients to home region
 print("🌼  Fetching OS image ...", end="\r")
-os_images = compute_client.list_images(compartment.id, operating_system="Canonical Ubuntu").data
-os_image: core.models.Image = sorted(os_images, key=lambda x:x.time_created).pop()
+os_images = compute_client.list_images(compartment.id, operating_system="Canonical Ubuntu", lifecycle_state="AVAILABLE", operating_system_version="22.04 Minimal").data
+os_image: core.models.Image = sorted(os_images, key=lambda x:x.display_name).pop()
 print("✅  Fetched OS image ...", end="\r")
 
 # Skip or Create virtual machine based on the configuration
