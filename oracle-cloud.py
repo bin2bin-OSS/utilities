@@ -24,8 +24,6 @@ users:
 runcmd:
   - echo "PermitRootLogin prohibit-password" >> /etc/ssh/sshd_config
   - systemctl restart ssh
-  - mkdir -p "/utils"
-  - curl "https://raw.githubusercontent.com/bin2bin-OSS/utilities/master/system-stats.py" -o "/utils/system.py"
   - echo "DNSStubListener=no" >> /etc/systemd/resolved.conf
   - systemctl restart systemd-resolved
   - echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf && sysctl -p
@@ -231,5 +229,8 @@ print("✅  Fetched Machine IP Address ...")
 
 # Update the machine's public ip back to bin2bin
 print("🌼  Updating Machine IP Address ...", end="\r")
-put(f"{BASE_API_URL}/custom/put_machine_public_ip", json = {"public_ip": public_ip}, headers=auth_headers)
+payload = {
+    "cpu": 0.25, "ram": 1, "public_ip": public_ip, "disk": 100, "swap": 4,
+    "image": os_image.operating_system + " - " + os_image.operating_system_version}
+put(f"{BASE_API_URL}/custom/put_machine_public_ip", json = payload, headers=auth_headers)
 print("✅  Updated Machine IP Address ...")
