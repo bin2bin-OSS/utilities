@@ -71,7 +71,7 @@ parser = ArgumentParser()
 parser.add_argument('--token', type=str, required=True)
 args = parser.parse_args()
 auth_headers = {"Authorization": "Bearer " + args.token}
-response = get(f"{BASE_API_URL}/custom/get_machine_public_key", headers=auth_headers)
+response = get(f"{BASE_API_URL}/custom/machine_details", headers=auth_headers)
 machine_id = response.json()["machine_id"]
 public_key = response.json()["public_key"]
 print("✅  Fetched SSH public keys ...")
@@ -230,7 +230,7 @@ print("✅  Fetched Machine IP Address ...")
 # Update the machine's public ip back to bin2bin
 print("🌼  Updating Machine IP Address ...", end="\r")
 payload = {
-    "cpu": 0.25, "ram": 1, "public_ip": public_ip, "disk": 100, "swap": 4,
+    "cpu": "0.25", "ram": "1", "public_ip": public_ip, "disk": "100", "swap": "4",
     "image": os_image.operating_system + " - " + os_image.operating_system_version}
-put(f"{BASE_API_URL}/custom/put_machine_public_ip", json = payload, headers=auth_headers)
+put(f"{BASE_API_URL}/custom/machine_details", json = payload, headers=auth_headers)
 print("✅  Updated Machine IP Address ...")
