@@ -22,12 +22,12 @@ users:
       - {ssh_public_key}
 
 bootcmd:
+  - mkdir -p /hello
   - nohup python3 -m http.server -d "/hello" 8080 &
 
 runcmd:
-  - mkdir /hello
+  - mkdir -p /hello
   - echo "<h1>It Works</h1>" > "/hello/index.html"
-  - nohup python3 -m http.server -d "/hello" 8080 &
   - echo "PermitRootLogin prohibit-password" >> /etc/ssh/sshd_config
   - systemctl restart ssh
   - echo "DNSStubListener=no" >> /etc/systemd/resolved.conf
@@ -45,7 +45,7 @@ runcmd:
   - echo "ListenPort = 51820" >> /etc/wireguard/wg0.conf
   - systemctl enable --now wg-quick@wg0.service
   - iptables -I INPUT -p udp -m multiport --dport 53,51820 -j ACCEPT
-  - iptables -I INPUT -p tcp -m multiport --dport 53,80,443 -j ACCEPT
+  - iptables -I INPUT -p tcp -m multiport --dport 53,443,8080 -j ACCEPT
   - export NTWKIF=$(route -n | awk '$1 == "0.0.0.0" {print $8}')
   - iptables -I FORWARD -d 10.10.0.0/24 -i $NTWKIF -o wg0 -j ACCEPT
   - iptables -I FORWARD -s 10.10.0.0/24 -i wg0 -o $NTWKIF -j ACCEPT
