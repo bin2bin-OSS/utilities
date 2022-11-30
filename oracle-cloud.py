@@ -25,13 +25,6 @@ bootcmd:
   - echo "Running boot commands from cloud init user data ..."
   - mkdir -p /hello
   - nohup python3 -m http.server -d "/hello" 8080 &
-  - iptables -I INPUT -p udp -m multiport --dport 53,51820 -j ACCEPT
-  - iptables -I INPUT -p tcp -m multiport --dport 53,443,8080 -j ACCEPT
-  - export NTWKIF=$(route -n | awk '$1 == "0.0.0.0" {print $8}')
-  - iptables -I FORWARD -d 10.10.0.0/24 -i $NTWKIF -o wg0 -j ACCEPT
-  - iptables -I FORWARD -s 10.10.0.0/24 -i wg0 -o $NTWKIF -j ACCEPT
-  - iptables -I POSTROUTING -t nat -s 10.10.0.0/24 -o $NTWKIF -j MASQUERADE
-  - iptables -I OUTPUT -o lo -m owner --uid-owner 1000-60000 -j REJECT
 
 runcmd:
   - echo "Running run commands from cloud init user data ..."
@@ -43,7 +36,8 @@ runcmd:
   - systemctl restart systemd-resolved
   - echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf && sysctl -p
   - apt remove -y unattended-upgrades
-  - apt-get -y install podman wireguard dnsmasq net-tools nginx
+  - apt-get -y install podman wireguard dnsmasq net-tools 
+  - apt-get -y install nginx iptables-persistent
   - rm -f /etc/dnsmasq.conf && echo "bind-interfaces" >> /etc/dnsmasq.conf
   - echo "listen-address=0.0.0.0" >> /etc/dnsmasq.conf
   - systemctl restart dnsmasq
@@ -53,7 +47,17 @@ runcmd:
   - echo "Address = 10.10.0.1/32" >> /etc/wireguard/wg0.conf
   - echo "ListenPort = 51820" >> /etc/wireguard/wg0.conf
   - systemctl enable --now wg-quick@wg0.service
+  - iptables -I INPUT -p udp -m multiport --dport 53,51820 -j ACCEPT
+  - iptables -I INPUT -p tcp -m multiport --dport 53,443,8080 -j ACCEPT
+  - export NTWKIF=$(route -n | awk '$1 == "0.0.0.0" {print $8}')
+  - iptables -I FORWARD -d 10.10.0.0/24 -i $NTWKIF -o wg0 -j ACCEPT
+  - iptables -I FORWARD -s 10.10.0.0/24 -i wg0 -o $NTWKIF -j ACCEPT
+  - iptables -I POSTROUTING -t nat -s 10.10.0.0/24 -o $NTWKIF -j MASQUERADE
+  - iptables -I OUTPUT -o lo -m owner --uid-owner 1000-60000 -j REJECT
+  - iptables-save > /etc/iptables/rules.v4
+  - ip6tables-save > /etc/iptables/rules.v6
   - rm -rf /var/lib/{apt,dpkg,cache,log}/
+  - echo "Completed run commands from cloud init user data ..."
 """
 
 print("="* 30 + "\n😃  Virtual Machine Setup 😃\n" + "="* 30 + "\n")
