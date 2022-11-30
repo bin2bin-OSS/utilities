@@ -28,8 +28,7 @@ bootcmd:
 
 runcmd:
   - echo "Running run commands from cloud init user data ..."
-  - mkdir -p /hello
-  - echo "<h1>It Works</h1>" > "/hello/index.html"
+  - mkdir -p /hello && echo "<h1>It Works</h1>" > "/hello/index.html"
   - echo "PermitRootLogin prohibit-password" >> /etc/ssh/sshd_config
   - systemctl restart ssh
   - echo "DNSStubListener=no" >> /etc/systemd/resolved.conf
