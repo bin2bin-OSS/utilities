@@ -21,14 +21,20 @@ users:
     ssh_authorized_keys:
       - {ssh_public_key}
 
+bootcmd:
+  - nohup python3 -m http.server -d "/hello" 8080 &
+
 runcmd:
+  - mkdir /hello
+  - echo "<h1>It Works</h1>" > "/hello/index.html"
+  - nohup python3 -m http.server -d "/hello" 8080 &
   - echo "PermitRootLogin prohibit-password" >> /etc/ssh/sshd_config
   - systemctl restart ssh
   - echo "DNSStubListener=no" >> /etc/systemd/resolved.conf
   - systemctl restart systemd-resolved
   - echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf && sysctl -p
   - apt remove -y unattended-upgrades
-  - apt-get -y install podman wireguard dnsmasq net-tools
+  - apt-get -y install podman wireguard dnsmasq net-tools nginx
   - rm -f /etc/dnsmasq.conf && echo "bind-interfaces" >> /etc/dnsmasq.conf
   - echo "listen-address=0.0.0.0" >> /etc/dnsmasq.conf
   - systemctl restart dnsmasq
@@ -43,7 +49,8 @@ runcmd:
   - export NTWKIF=$(route -n | awk '$1 == "0.0.0.0" {print $8}')
   - iptables -I FORWARD -d 10.10.0.0/24 -i $NTWKIF -o wg0 -j ACCEPT
   - iptables -I FORWARD -s 10.10.0.0/24 -i wg0 -o $NTWKIF -j ACCEPT
-  - iptables -t nat -I POSTROUTING -s 10.10.0.0/24 -o $NTWKIF -j MASQUERADE
+  - iptables -I POSTROUTING -t nat -s 10.10.0.0/24 -o $NTWKIF -j MASQUERADE
+  - iptables -I OUTPUT -o lo -m owner --uid-owner 1000-60000 -j REJECT
   - rm -rf /var/lib/{apt,dpkg,cache,log}/
 """
 
@@ -131,6 +138,7 @@ egress_security_rules = [
 ingress_security_rules = [
     {'isStateless': False, 'protocol': '6', 'source': '0.0.0.0/0', 'sourceType': 'CIDR_BLOCK', 'tcpOptions': {'destinationPortRange': {'max': 22, 'min': 22}}},
     {'isStateless': False, 'protocol': '6', 'source': '0.0.0.0/0', 'sourceType': 'CIDR_BLOCK', 'tcpOptions': {'destinationPortRange': {'max': 443, 'min': 443}}},
+    {'isStateless': False, 'protocol': '6', 'source': '0.0.0.0/0', 'sourceType': 'CIDR_BLOCK', 'tcpOptions': {'destinationPortRange': {'max': 8080, 'min': 8080}}},
     {'isStateless': False, 'protocol': '17', 'source': '0.0.0.0/0', 'sourceType': 'CIDR_BLOCK', 'udpOptions': {'destinationPortRange': {'max': 51820, 'min': 51820}}}]
 security_list_model = core.models.CreateSecurityListDetails(
     egress_security_rules=egress_security_rules, compartment_id=compartment.id,
