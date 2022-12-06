@@ -34,9 +34,9 @@ runcmd:
   - echo "DNSStubListener=no" >> /etc/systemd/resolved.conf
   - systemctl restart systemd-resolved
   - echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf && sysctl -p
-  - apt remove -y unattended-upgrades
+  - apt-get remove -y unattended-upgrades
   - apt-get -y install podman wireguard dnsmasq net-tools 
-  - apt-get -y install nginx iptables-persistent
+  - apt-get -y install nginx iptables-persistent psmisc
   - rm -f /etc/dnsmasq.conf && echo "bind-interfaces" >> /etc/dnsmasq.conf
   - echo "listen-address=0.0.0.0" >> /etc/dnsmasq.conf
   - systemctl restart dnsmasq
@@ -52,7 +52,6 @@ runcmd:
   - iptables -I FORWARD -d 10.10.0.0/24 -i $NTWKIF -o wg0 -j ACCEPT
   - iptables -I FORWARD -s 10.10.0.0/24 -i wg0 -o $NTWKIF -j ACCEPT
   - iptables -I POSTROUTING -t nat -s 10.10.0.0/24 -o $NTWKIF -j MASQUERADE
-  - iptables -I OUTPUT -o lo -m owner --uid-owner 1000-60000 -j REJECT
   - iptables-save > /etc/iptables/rules.v4
   - ip6tables-save > /etc/iptables/rules.v6
   - rm -rf /var/lib/{apt,dpkg,cache,log}/
