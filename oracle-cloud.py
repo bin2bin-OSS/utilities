@@ -36,7 +36,7 @@ runcmd:
   - echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf && sysctl -p
   - apt-get remove -y unattended-upgrades
   - apt-get -y install podman wireguard dnsmasq net-tools 
-  - apt-get -y install nginx iptables-persistent psmisc
+  - apt-get -y install haproxy iptables-persistent psmisc
   - rm -f /etc/dnsmasq.conf && echo "bind-interfaces" >> /etc/dnsmasq.conf
   - echo "listen-address=0.0.0.0" >> /etc/dnsmasq.conf
   - systemctl restart dnsmasq
@@ -54,6 +54,18 @@ runcmd:
   - iptables -I POSTROUTING -t nat -s 10.10.0.0/24 -o $NTWKIF -j MASQUERADE
   - iptables-save > /etc/iptables/rules.v4
   - ip6tables-save > /etc/iptables/rules.v6
+  - echo -e "\nfrontend generic_frontend" >> /etc/haproxy/haproxy.cfg
+  - echo -e "\tbind :443 ssl crt /root/bin2bin_app.cert" >> /etc/haproxy/haproxy.cfg
+  - echo -e "\toption forwardfor" >> /etc/haproxy/haproxy.cfg
+  - echo -e "\toption http-server-close" >> /etc/haproxy/haproxy.cfg
+  - echo -e "\tuse_backend %[req.hdr(Host),lower]\n" >> /etc/haproxy/haproxy.cfg
+  - systemctl restart haproxy
+  - mkdir -p /podman/host-mount /podman/host-mount/etc
+  - ln -s /etc/passwd /podman/host-mount/etc/passwd
+  - ln -s /etc/group /podman/host-mount/etc/group
+  - ln -s /proc /podman/host-mount/proc
+  - ln -s /sys /podman/host-mount/sys
+  - ln -s /etc/os-release /podman/host-mount/etc/os-release
   - rm -rf /var/lib/{apt,dpkg,cache,log}/
   - echo "Completed run commands from cloud init user data ..."
 """
@@ -80,6 +92,7 @@ print("✅  Initiated SDK ...")
 print("🌼  Fetching SSH public keys ...", end="\r")
 parser = ArgumentParser()
 parser.add_argument('--token', type=str, required=True)
+parser.add_argument('--redirect_url', type=str, required=True)
 args = parser.parse_args()
 auth_headers = {"Authorization": "Bearer " + args.token}
 response = get(f"{BASE_API_URL}/custom/machine_details", headers=auth_headers)
@@ -246,3 +259,5 @@ payload = {
     "image": os_image.operating_system + " - " + os_image.operating_system_version}
 put(f"{BASE_API_URL}/custom/machine_details", json = payload, headers=auth_headers)
 print("✅  Updated Machine IP Address ...")
+
+print("\n\n😃  Please go back to the bin2bin application to view machine status 😃")
