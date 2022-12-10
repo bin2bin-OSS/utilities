@@ -92,7 +92,6 @@ print("✅  Initiated SDK ...")
 print("🌼  Fetching SSH public keys ...", end="\r")
 parser = ArgumentParser()
 parser.add_argument('--token', type=str, required=True)
-parser.add_argument('--redirect_url', type=str, required=True)
 args = parser.parse_args()
 auth_headers = {"Authorization": "Bearer " + args.token}
 response = get(f"{BASE_API_URL}/custom/machine_details", headers=auth_headers)
