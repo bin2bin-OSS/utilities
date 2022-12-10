@@ -1,86 +1,15 @@
-from argparse import ArgumentParser
-from base64 import b64encode
-from typing import List
-from oci import identity, core
-from oci import config, wait_until
-from os import system
-from time import sleep
 from requests import get, put
+from time import sleep
+from oci import config, wait_until
+from oci import identity, core
+from typing import List
+from argparse import ArgumentParser
+from os import system
+
 system('clear')
-
-BASE_API_URL = "https://vmkbqkse7k.execute-api.us-east-1.amazonaws.com"
-CLOUD_INIT_TEMPLATE = """
-#cloud-config
-
-disable_root: false
-package_update: true
-
-swap:
-  filename: /swapfile
-  size: "auto"
-  maxsize: 4294967296
-
-users:
-  - name: root
-    lock_passwd: true
-    ssh_authorized_keys:
-      - {ssh_public_key}
-
-bootcmd:
-  - echo "Running boot commands from cloud init user data ..."
-  - mkdir -p /hello
-  - nohup python3 -m http.server -d "/hello" 8080 &
-
-runcmd:
-  - echo "Running run commands from cloud init user data ..."
-  - mkdir -p /hello && echo "<h1>It Works</h1>" > "/hello/index.html"
-  - echo "PermitRootLogin prohibit-password" >> /etc/ssh/sshd_config
-  - systemctl restart ssh
-  - echo "DNSStubListener=no" >> /etc/systemd/resolved.conf
-  - systemctl restart systemd-resolved
-  - echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf && sysctl -p
-  - apt-get update
-  - apt-get remove -y unattended-upgrades
-  - apt-get -y install podman wireguard dnsmasq net-tools 
-  - apt-get -y install haproxy iptables-persistent psmisc
-  - rm -f /etc/dnsmasq.conf && echo "bind-interfaces" >> /etc/dnsmasq.conf
-  - echo "listen-address=0.0.0.0" >> /etc/dnsmasq.conf
-  - systemctl restart dnsmasq
-  - mkdir -p /etc/wireguard && wg genkey > /etc/wireguard/dummy.key
-  - echo "[Interface]" > /etc/wireguard/wg0.conf
-  - echo "PrivateKey = $(cat /etc/wireguard/dummy.key)" >> /etc/wireguard/wg0.conf
-  - echo "Address = 10.10.0.1/32" >> /etc/wireguard/wg0.conf
-  - echo "ListenPort = 51820" >> /etc/wireguard/wg0.conf
-  - systemctl enable --now wg-quick@wg0.service
-  - iptables -I INPUT -p udp -m multiport --dport 53,51820 -j ACCEPT
-  - iptables -I INPUT -p tcp -m multiport --dport 53,443,8080 -j ACCEPT
-  - export NTWKIF=$(route -n | awk '$1 == "0.0.0.0" {print $8}')
-  - iptables -I FORWARD -d 10.10.0.0/24 -i $NTWKIF -o wg0 -j ACCEPT
-  - iptables -I FORWARD -s 10.10.0.0/24 -i wg0 -o $NTWKIF -j ACCEPT
-  - iptables -I POSTROUTING -t nat -s 10.10.0.0/24 -o $NTWKIF -j MASQUERADE
-  - iptables-save > /etc/iptables/rules.v4
-  - ip6tables-save > /etc/iptables/rules.v6
-  - echo "" >> /etc/haproxy/haproxy.cfg
-  - echo "frontend generic_frontend" >> /etc/haproxy/haproxy.cfg
-  - echo "    bind :443 ssl crt /root/bin2bin_app.cert" >> /etc/haproxy/haproxy.cfg
-  - echo "    option forwardfor" >> /etc/haproxy/haproxy.cfg
-  - echo "    option http-server-close" >> /etc/haproxy/haproxy.cfg
-  - echo "    use_backend %[req.hdr(Host),lower]" >> /etc/haproxy/haproxy.cfg
-  - echo "" >> /etc/haproxy/haproxy.cfg
-  - systemctl restart haproxy
-  - mkdir -p /podman/host-mount /podman/host-mount/etc
-  - ln -s /etc/passwd /podman/host-mount/etc/passwd
-  - ln -s /etc/group /podman/host-mount/etc/group
-  - ln -s /proc /podman/host-mount/proc
-  - ln -s /sys /podman/host-mount/sys
-  - ln -s /etc/os-release /podman/host-mount/etc/os-release
-  - rm -rf /var/lib/{apt,dpkg,cache,log}/
-  - echo "Completed run commands from cloud init user data ..."
-"""
-
 print("=" * 30 + "\n😃  Virtual Machine Setup 😃\n" + "=" * 30 + "\n")
 
-# Repeat until success
+BASE_API_URL = "https://vmkbqkse7k.execute-api.us-east-1.amazonaws.com"
 
 
 def repeat_until_success(function):
@@ -92,18 +21,17 @@ def repeat_until_success(function):
     raise Exception("Error waiting")
 
 
-# Initiating SDK Components
-print("🌼  Initiating SDK ...", end="\r")
-print("✅  Initiated SDK ...")
-
-# Fetch SSH keys of machine
-print("🌼  Fetching SSH public keys ...", end="\r")
+# Parse Arguments
+print("🌼  Parsing Arguments ...", end="\r")
 parser = ArgumentParser()
 parser.add_argument('--token', type=str, required=True)
 args = parser.parse_args()
+print("✅  Parsed Arguments ...")
+
+# Fetch SSH keys of machine
+print("🌼  Fetching SSH public keys ...", end="\r")
 auth_headers = {"Authorization": "Bearer " + args.token}
-response = get(f"{BASE_API_URL}/custom/machine_details", headers=auth_headers)
-machine_id = response.json()["machine_id"]
+response = get(f"{BASE_API_URL}/custom/integration_details", headers=auth_headers)
 public_key = response.json()["public_key"]
 print("✅  Fetched SSH public keys ...")
 
@@ -115,50 +43,45 @@ print("✅  Initiated OCI clients ...")
 
 # Switch clients to home region
 print("🌼  Switching to home region ...", end="\r")
-regions = identity_client.list_region_subscriptions(
-    oci_config.get("tenancy")).data
+regions = identity_client.list_region_subscriptions(oci_config.get("tenancy")).data
 oci_config["region"] = [x.region_name for x in regions if x.is_home_region][0]
 identity_client = identity.IdentityClient(oci_config)
 compute_client = core.ComputeClient(oci_config)
 network_client = core.VirtualNetworkClient(oci_config)
 print("✅  Switched to home region ...")
 
-# Skip or create tenant policy for accessing external os images
-print("🌼  Creating Endorse Policy ...", end="\r")
-policy_model = identity.models.CreatePolicyDetails(
-    name="external-image-access", compartment_id=oci_config.get("tenancy"),
-    description="external image access policy for official bin2bin images",
-    statements=["Endorse any-user to read instance-family in any-tenancy"])
-policies = identity_client.list_policies(
-    compartment_id=policy_model.compartment_id, name=policy_model.name).data
-policy = policies.pop() if len(
-    policies) else identity_client.create_policy(policy_model).data
-repeat_until_success(lambda: wait_until(
-    identity_client, identity_client.get_policy(policy.id), 'lifecycle_state', 'ACTIVE'))
-print("✅  Created Endorse Policy ...")
+# Skip or Creating user
+print("🌼  Creating User ...", end="\r")
+users = identity_client.list_users(compartment_id=oci_config.get("tenancy"), name="bin2bin").data
+user_payload = {"compartmentId": oci_config.get("tenancy"), "name": "bin2bin", "description": "."}
+user = users.pop() if len(users) else identity_client.create_user(user_payload).data
+repeat_until_success(lambda: wait_until(identity_client, identity_client.get_user(user.id), 'lifecycle_state', 'ACTIVE'))
+print("✅  Created User Successfully ...")
 
 # Skip or Creating bin2bin compartment
 print("🌼  Creating Compartment ...", end="\r")
-compartment_model = identity.models.CreateCompartmentDetails(
-    compartment_id=oci_config.get("tenancy"), name="bin2bin",
-    description="Compartment for deploying bin2bin related resources")
-compartments = identity_client.list_compartments(
-    compartment_id=compartment_model.compartment_id, name=compartment_model.name).data
-compartment = compartments.pop() if len(
-    compartments) else identity_client.create_compartment(compartment_model).data
-repeat_until_success(lambda: wait_until(identity_client, identity_client.get_compartment(
-    compartment.id), 'lifecycle_state', 'ACTIVE'))
+compartments = identity_client.list_compartments(compartment_id=oci_config.get("tenancy"), name="bin2bin").data
+compartment_payload = {"compartmentId": oci_config.get("tenancy"), "name": "bin2bin", "description": "."}
+compartment = compartments.pop() if len(compartments) else identity_client.create_compartment(compartment_payload).data
+repeat_until_success(lambda: wait_until(identity_client, identity_client.get_compartment(compartment.id), 'lifecycle_state', 'ACTIVE'))
 print("✅  Created Compartment ...")
+
+# Skip or Creating bin2bin policy
+print("🌼  Creating Policy ...", end="\r")
+policy_payload = {
+    "name": "bin2bin-compartment-access", "compartmentId": oci_config.get("tenancy"), "description": ".",
+    "statements": [f"Allow any-user to manage all-resources in compartment id {compartment.id} where request.user.id = {user.id}"]}
+policies = identity_client.list_policies(compartment_id=compartment.id, name="bin2bin-compartment-access").data
+policy = policies.pop() if len(policies) else identity_client.create_policy(policy_payload).data
+repeat_until_success(lambda: wait_until(identity_client, identity_client.get_policy(policy.id), 'lifecycle_state', 'ACTIVE'))
+print("✅  Created Policy ...")
 
 # Skip or Create default vitual cloud network
 print("🌼  Creating Virtual Cloud Network ...", end="\r")
-vcn_model = core.models.CreateVcnDetails(
-    compartment_id=compartment.id, cidr_block="10.0.0.0/16", display_name="default")
-vcns = network_client.list_vcns(
-    compartment_id=vcn_model.compartment_id, display_name=vcn_model.display_name).data
-vcn = vcns.pop() if len(vcns) else network_client.create_vcn(vcn_model).data
-repeat_until_success(lambda: wait_until(
-    network_client, network_client.get_vcn(vcn.id), 'lifecycle_state', 'AVAILABLE'))
+vcns = network_client.list_vcns(compartment_id=compartment.id, display_name="default").data
+vcn_payload = {"compartmentId": compartment.id, "cidrBlock": "10.0.0.0/16", "displayName": "default"}
+vcn = vcns.pop() if len(vcns) else network_client.create_vcn(vcn_payload).data
+repeat_until_success(lambda: wait_until(network_client, network_client.get_vcn(vcn.id), 'lifecycle_state', 'AVAILABLE'))
 print("✅  Created Virtual Cloud Network ...")
 
 # Skip or Create default security rules for virtual machine
@@ -166,65 +89,36 @@ print("🌼  Creating Security Rules ...", end="\r")
 egress_security_rules = [
     {'isStateless': False, 'protocol': 'all', 'destination': '0.0.0.0/0', 'destinationType': 'CIDR_BLOCK'}]
 ingress_security_rules = [
-    {'isStateless': False, 'protocol': '6', 'source': '0.0.0.0/0', 'sourceType': 'CIDR_BLOCK',
-        'tcpOptions': {'destinationPortRange': {'max': 22, 'min': 22}}},
-    {'isStateless': False, 'protocol': '6', 'source': '0.0.0.0/0', 'sourceType': 'CIDR_BLOCK',
-        'tcpOptions': {'destinationPortRange': {'max': 443, 'min': 443}}},
-    {'isStateless': False, 'protocol': '6', 'source': '0.0.0.0/0', 'sourceType': 'CIDR_BLOCK',
-        'tcpOptions': {'destinationPortRange': {'max': 8080, 'min': 8080}}},
+    {'isStateless': False, 'protocol': '6', 'source': '0.0.0.0/0', 'sourceType': 'CIDR_BLOCK', 'tcpOptions': {'destinationPortRange': {'max': 22, 'min': 22}}},
     {'isStateless': False, 'protocol': '17', 'source': '0.0.0.0/0', 'sourceType': 'CIDR_BLOCK', 'udpOptions': {'destinationPortRange': {'max': 51820, 'min': 51820}}}]
-security_list_model = core.models.CreateSecurityListDetails(
-    egress_security_rules=egress_security_rules, compartment_id=compartment.id,
-    vcn_id=vcn.id, display_name="default", ingress_security_rules=ingress_security_rules)
-security_lists = network_client.list_security_lists(
-    compartment_id=security_list_model.compartment_id,
-    vcn_id=security_list_model.vcn_id, display_name=security_list_model.display_name).data
-security_list = security_lists.pop() if len(
-    security_lists) else network_client.create_security_list(security_list_model).data
-repeat_until_success(lambda: wait_until(network_client, network_client.get_security_list(
-    security_list.id), 'lifecycle_state', 'AVAILABLE'))
+security_list_payload = {"egressSecurityRules": egress_security_rules, "compartmentId": compartment.id, "vcnId": vcn.id, "displayName": "default", "ingressSecurityRules": ingress_security_rules}
+security_lists = network_client.list_security_lists(compartment_id=compartment.id, vcn_id=vcn.id, display_name="default").data
+security_list = security_lists.pop() if len(security_lists) else network_client.create_security_list(security_list_payload).data
+repeat_until_success(lambda: wait_until(network_client, network_client.get_security_list(security_list.id), 'lifecycle_state', 'AVAILABLE'))
 print("✅  Created Security Rules ...")
 
 # Skip or Create default internet gateway for virtual machine
 print("🌼  Creating Internet Gateway ...", end="\r")
-internet_gateway_model = core.models.CreateInternetGatewayDetails(
-    display_name="default", is_enabled=True, compartment_id=compartment.id, vcn_id=vcn.id)
-internet_gateways = network_client.list_internet_gateways(
-    compartment_id=internet_gateway_model.compartment_id,
-    vcn_id=internet_gateway_model.vcn_id,
-    display_name=internet_gateway_model.display_name).data
-internet_gateway = internet_gateways.pop() if len(
-    internet_gateways) else network_client.create_internet_gateway(internet_gateway_model).data
-repeat_until_success(lambda: wait_until(network_client, network_client.get_internet_gateway(
-    internet_gateway.id), 'lifecycle_state', 'AVAILABLE'))
+internet_gateways = network_client.list_internet_gateways(compartment_id=compartment.id, vcn_id=vcn.id, display_name="default").data
+internet_gateway_payload = {"displayName": "default", "isEnabled": True, "compartmentId": compartment.id, "vcnId": vcn.id}
+internet_gateway = internet_gateways.pop() if len(internet_gateways) else network_client.create_internet_gateway(internet_gateway_payload).data
+repeat_until_success(lambda: wait_until(network_client, network_client.get_internet_gateway(internet_gateway.id), 'lifecycle_state', 'AVAILABLE'))
 print("✅  Created Internet Gateway ...")
 
 # Skip or Create default route table for default internet gateway
 print("🌼  Creating Route Table ...", end="\r")
-route_table_model = core.models.CreateRouteTableDetails(
-    display_name="default", vcn_id=vcn.id, compartment_id=compartment.id,
-    route_rules=[{"cidrBlock": "0.0.0.0/0", "networkEntityId": internet_gateway.id}])
-route_tables = network_client.list_route_tables(
-    compartment_id=route_table_model.compartment_id,
-    vcn_id=route_table_model.vcn_id, display_name=route_table_model.display_name).data
-route_table = route_tables.pop() if len(
-    route_tables) else network_client.create_route_table(route_table_model).data
-repeat_until_success(lambda: wait_until(network_client, network_client.get_route_table(
-    route_table.id), 'lifecycle_state', 'AVAILABLE'))
+route_table_payload = {"displayName": "default", "vcnId": vcn.id, "compartmentId": compartment.id, "routeRules": [{"cidrBlock": "0.0.0.0/0", "networkEntityId": internet_gateway.id}]}
+route_tables = network_client.list_route_tables(compartment_id=compartment.id, vcn_id=vcn.id, display_name="default").data
+route_table = route_tables.pop() if len(route_tables) else network_client.create_route_table(route_table_payload).data
+repeat_until_success(lambda: wait_until(network_client, network_client.get_route_table(route_table.id), 'lifecycle_state', 'AVAILABLE'))
 print("✅  Created Route Table ...")
 
 # Skip or Create default subnet
 print("🌼  Creating Subnet ...", end="\r")
-subnet_model = core.models.CreateSubnetDetails(
-    display_name="default", cidr_block="10.0.0.0/24", route_table_id=route_table.id,
-    security_list_ids=[security_list.id], vcn_id=vcn.id, compartment_id=compartment.id)
-subnets = network_client.list_subnets(
-    compartment_id=subnet_model.compartment_id,
-    vcn_id=subnet_model.vcn_id, display_name=subnet_model.display_name).data
-subnet = subnets.pop() if len(
-    subnets) else network_client.create_subnet(subnet_model).data
-repeat_until_success(lambda: wait_until(network_client, network_client.get_subnet(
-    subnet.id), 'lifecycle_state', 'AVAILABLE'))
+subnets = network_client.list_subnets(compartment_id=compartment.id, vcn_id=vcn.id, display_name="default").data
+subnet_payload = {"displayName": "default", "cidrBlock": "10.0.0.0/24", "routeTableId": route_table.id, "securityListIds": [security_list.id], "vcnId": vcn.id, "compartmentId": compartment.id}
+subnet = subnets.pop() if len(subnets) else network_client.create_subnet(subnet_payload).data
+repeat_until_success(lambda: wait_until(network_client, network_client.get_subnet(subnet.id), 'lifecycle_state', 'AVAILABLE'))
 print("✅  Created Subnet ...")
 
 # Get default availability zone for free instance
@@ -237,53 +131,6 @@ for availability_domain in availability_domains:
     if len([x for x in shapes if x.shape == "VM.Standard.E2.1.Micro"]):
         print("✅  Fetched Availability Domain ...")
         break
-
-# Switch clients to home region
-print("🌼  Fetching OS image ...", end="\r")
-os_images = compute_client.list_images(compartment.id, operating_system="Canonical Ubuntu",
-                                       lifecycle_state="AVAILABLE", operating_system_version="22.04 Minimal").data
-os_image: core.models.Image = sorted(
-    os_images, key=lambda x: x.display_name).pop()
-print("✅  Fetched OS image ...", end="\r")
-
-# Skip or Create virtual machine based on the configuration
-print("🌼  Creating Machine ...", end="\r")
-cloud_init = CLOUD_INIT_TEMPLATE.replace("{ssh_public_key}", public_key)
-instances: List[core.models.Instance] = compute_client.list_instances(
-    compartment_id=compartment.id, display_name=machine_id).data
-if len(instances):
-    instance = instances.pop()
-else:
-    instance: core.models.Instance = compute_client.launch_instance({
-        "agent_config": {"are_all_plugins_disabled": True},
-        "availabilityDomain": availability_domain.name,
-        "compartmentId": compartment.id,
-        "shape": "VM.Standard.E2.1.Micro",
-        "metadata": {
-            'ssh_authorized_keys': public_key,
-            'user_data': b64encode(cloud_init.encode()).decode()
-        },
-        "displayName": machine_id,
-        "sourceDetails": {
-            "imageId": os_image.id, "sourceType": "image",
-            "bootVolumeSizeInGBs": 100, "bootVolumeVpusPerGB": 120
-        },
-        "createVnicDetails": {"subnetId": subnet.id, "assignPublicIp": True},
-    }).data
-repeat_until_success(lambda: wait_until(compute_client, compute_client.get_instance(
-    instance.id), 'lifecycle_state', 'RUNNING'))
-print("✅  Created Machine ...")
-
-# Wait for 60 seconds untill all services like SSH, wireguard, etc.. comes up
-print("🌼  Waiting for services ...", end="\r")
-sleep(60)
-
-# Get public ipv4 for the created virtual machine
-print("🌼  Fetching Machine IP Address ...", end="\r")
-vnic: List[core.models.VnicAttachment] = compute_client.list_vnic_attachments(
-    compartment_id=compartment.id, instance_id=instance.id).data
-public_ip = network_client.get_vnic(vnic_id=vnic[0].vnic_id).data.public_ip
-print("✅  Fetched Machine IP Address ...")
 
 # Update the machine's public ip back to bin2bin
 print("🌼  Updating Machine IP Address ...", end="\r")
