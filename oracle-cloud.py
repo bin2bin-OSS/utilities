@@ -6,7 +6,7 @@ from argparse import ArgumentParser
 from os import system
 
 system('clear')
-print("=" * 30 + "\n😃  Virtual Machine Setup 😃\n" + "=" * 30 + "\n")
+print("=" * 25 + "\n😃  Integration Setup 😃\n" + "=" * 25 + "\n")
 
 BASE_API_URL = "https://vmkbqkse7k.execute-api.us-east-1.amazonaws.com"
 DESC = {"description": "Created Automatically by bin2bin"}
