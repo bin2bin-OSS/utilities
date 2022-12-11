@@ -9,6 +9,8 @@ system('clear')
 print("=" * 30 + "\n😃  Virtual Machine Setup 😃\n" + "=" * 30 + "\n")
 
 BASE_API_URL = "https://vmkbqkse7k.execute-api.us-east-1.amazonaws.com"
+DESC = {"description": "Created Automatically by bin2bin"}
+TAGS = {"definedTags": {"bin2bin": {"created-by": "bin2bin"}}}
 
 
 def repeat_until_success(function):
@@ -49,25 +51,42 @@ compute_client = core.ComputeClient(oci_config)
 network_client = core.VirtualNetworkClient(oci_config)
 print("✅  Switched to home region ...")
 
+# Skip Or Create Tag Namespace
+print("🌼  Creating Tag Namespace ...", end="\r")
+namespaces = identity_client.list_tag_namespaces(compartment_id=oci_config.get("tenancy")).data
+namespaces = [namespace for namespace in namespaces if namespace.name == "bin2bin"]
+namespace_payload = {"compartmentId": oci_config.get("tenancy"), "name": "bin2bin", **DESC}
+namespace = namespaces.pop() if len(namespaces) else identity_client.create_tag_namespace(namespace_payload).data
+repeat_until_success(lambda: wait_until(identity_client, identity_client.get_tag_namespace(namespace.id), 'lifecycle_state', 'ACTIVE'))
+print("✅  Created Tag Namespace Successfully ...")
+
+# Skip Or Create Tag Namespace Key
+print("🌼  Creating Tag Namespace Key ...", end="\r")
+namespace_tags = identity_client.list_tags(tag_namespace_id=namespace.id).data
+namespace_tags = [namespace_tag for namespace_tag in namespace_tags if namespace_tag.name == "created-by"]
+namespace_tag_payload = {"name": "created-by", **DESC}
+namespace_tag = namespace_tags.pop() if len(namespace_tags) else identity_client.create_tag(namespace.id, namespace_tag_payload).data
+repeat_until_success(lambda: wait_until(identity_client, identity_client.get_tag(namespace.id, "created-by"), 'lifecycle_state', 'ACTIVE'))
+print("✅  Created Tag Namespace Key ...")
+
 # Skip or Creating user
 print("🌼  Creating User ...", end="\r")
 users = identity_client.list_users(compartment_id=oci_config.get("tenancy"), name="bin2bin").data
-user_payload = {"compartmentId": oci_config.get("tenancy"), "name": "bin2bin", "description": "."}
+user_payload = {"compartmentId": oci_config.get("tenancy"), "name": "bin2bin", **DESC, **TAGS}
 user = users.pop() if len(users) else identity_client.create_user(user_payload).data
 repeat_until_success(lambda: wait_until(identity_client, identity_client.get_user(user.id), 'lifecycle_state', 'ACTIVE'))
 print("✅  Created User Successfully ...")
 
 # Updating api key
 print("🌼  Uploading API Key ...", end="\r")
-api_keys = identity_client.list_api_keys(user.id).data
-api_keys = [key for key in api_keys if key.key_value.strip() == public_key.strip()]
+api_keys = [key for key in identity_client.list_api_keys(user.id).data if key.key_value.strip() == public_key.strip()]
 api_key = api_keys.pop() if len(api_keys) else identity_client.upload_api_key(user.id, {"key": public_key}).data
 print("✅  Uploaded API Successfully ...")
 
 # Skip or Creating Group
 print("🌼  Creating Group ...", end="\r")
 groups = identity_client.list_groups(compartment_id=oci_config.get("tenancy"), name="bin2bin").data
-group_payload = {"compartmentId": oci_config.get("tenancy"), "name": "bin2bin", "description": "."}
+group_payload = {"compartmentId": oci_config.get("tenancy"), "name": "bin2bin",  **DESC, **TAGS}
 group = groups.pop() if len(groups) else identity_client.create_group(group_payload).data
 repeat_until_success(lambda: wait_until(identity_client, identity_client.get_group(group.id), 'lifecycle_state', 'ACTIVE'))
 print("✅  Created Group Successfully ...")
@@ -82,7 +101,7 @@ print("✅  Added User to Group Successfully ...")
 # Skip or Creating bin2bin compartment
 print("🌼  Creating Compartment ...", end="\r")
 compartments = identity_client.list_compartments(compartment_id=oci_config.get("tenancy"), name="bin2bin").data
-compartment_payload = {"compartmentId": oci_config.get("tenancy"), "name": "bin2bin", "description": "."}
+compartment_payload = {"compartmentId": oci_config.get("tenancy"), "name": "bin2bin",  **DESC, **TAGS}
 compartment = compartments.pop() if len(compartments) else identity_client.create_compartment(compartment_payload).data
 repeat_until_success(lambda: wait_until(identity_client, identity_client.get_compartment(compartment.id), 'lifecycle_state', 'ACTIVE'))
 print("✅  Created Compartment ...")
@@ -90,9 +109,12 @@ print("✅  Created Compartment ...")
 # Skip or Creating bin2bin policy
 print("🌼  Creating Policy ...", end="\r")
 policy_payload = {
-    "name": "bin2bin-compartment-access", "compartmentId": oci_config.get("tenancy"), "description": ".",
-    "statements": [f"Allow group id {group.id} to manage all-resources in compartment id {compartment.id}"]}
-policies = identity_client.list_policies(compartment_id=oci_config.get("tenancy"), name="bin2bin-compartment-access").data
+    "name": "bin2bin-access", "compartmentId": oci_config.get("tenancy"), **DESC, **TAGS,
+    "statements": [
+        f"Allow group id {group.id} to manage all-resources in compartment id {compartment.id}",
+        f"Allow group id {group.id} to manage all-resources in tenancy where target.resource.tag.bin2bin.created-by = 'bin2bin'",
+    ]}
+policies = identity_client.list_policies(compartment_id=oci_config.get("tenancy"), name="bin2bin-access").data
 policy = policies.pop() if len(policies) else identity_client.create_policy(policy_payload).data
 repeat_until_success(lambda: wait_until(identity_client, identity_client.get_policy(policy.id), 'lifecycle_state', 'ACTIVE'))
 print("✅  Created Policy ...")
@@ -100,7 +122,7 @@ print("✅  Created Policy ...")
 # Skip or Create default vitual cloud network
 print("🌼  Creating Virtual Cloud Network ...", end="\r")
 vcns = network_client.list_vcns(compartment_id=compartment.id, display_name="default").data
-vcn_payload = {"compartmentId": compartment.id, "cidrBlock": "10.0.0.0/16", "displayName": "default"}
+vcn_payload = {"compartmentId": compartment.id, "cidrBlock": "10.0.0.0/16", "displayName": "default", **TAGS}
 vcn = vcns.pop() if len(vcns) else network_client.create_vcn(vcn_payload).data
 repeat_until_success(lambda: wait_until(network_client, network_client.get_vcn(vcn.id), 'lifecycle_state', 'AVAILABLE'))
 print("✅  Created Virtual Cloud Network ...")
@@ -112,7 +134,7 @@ egress_security_rules = [
 ingress_security_rules = [
     {'isStateless': False, 'protocol': '6', 'source': '0.0.0.0/0', 'sourceType': 'CIDR_BLOCK', 'tcpOptions': {'destinationPortRange': {'max': 22, 'min': 22}}},
     {'isStateless': False, 'protocol': '17', 'source': '0.0.0.0/0', 'sourceType': 'CIDR_BLOCK', 'udpOptions': {'destinationPortRange': {'max': 51820, 'min': 51820}}}]
-security_list_payload = {"egressSecurityRules": egress_security_rules, "compartmentId": compartment.id, "vcnId": vcn.id, "displayName": "default", "ingressSecurityRules": ingress_security_rules}
+security_list_payload = {"egressSecurityRules": egress_security_rules, "compartmentId": compartment.id, "vcnId": vcn.id, "displayName": "default", "ingressSecurityRules": ingress_security_rules, **TAGS}
 security_lists = network_client.list_security_lists(compartment_id=compartment.id, vcn_id=vcn.id, display_name="default").data
 security_list = security_lists.pop() if len(security_lists) else network_client.create_security_list(security_list_payload).data
 repeat_until_success(lambda: wait_until(network_client, network_client.get_security_list(security_list.id), 'lifecycle_state', 'AVAILABLE'))
@@ -121,15 +143,15 @@ print("✅  Created Security Rules ...")
 # Skip or Create default internet gateway for virtual machine
 print("🌼  Creating Internet Gateway ...", end="\r")
 internet_gateways = network_client.list_internet_gateways(compartment_id=compartment.id, vcn_id=vcn.id, display_name="default").data
-internet_gateway_payload = {"displayName": "default", "isEnabled": True, "compartmentId": compartment.id, "vcnId": vcn.id}
+internet_gateway_payload = {"displayName": "default", "isEnabled": True, "compartmentId": compartment.id, "vcnId": vcn.id, **TAGS}
 internet_gateway = internet_gateways.pop() if len(internet_gateways) else network_client.create_internet_gateway(internet_gateway_payload).data
 repeat_until_success(lambda: wait_until(network_client, network_client.get_internet_gateway(internet_gateway.id), 'lifecycle_state', 'AVAILABLE'))
 print("✅  Created Internet Gateway ...")
 
 # Skip or Create default route table for default internet gateway
 print("🌼  Creating Route Table ...", end="\r")
-route_table_payload = {"displayName": "default", "vcnId": vcn.id, "compartmentId": compartment.id, "routeRules": [{"cidrBlock": "0.0.0.0/0", "networkEntityId": internet_gateway.id}]}
 route_tables = network_client.list_route_tables(compartment_id=compartment.id, vcn_id=vcn.id, display_name="default").data
+route_table_payload = {"displayName": "default", "vcnId": vcn.id, "compartmentId": compartment.id, "routeRules": [{"cidrBlock": "0.0.0.0/0", "networkEntityId": internet_gateway.id}], **TAGS}
 route_table = route_tables.pop() if len(route_tables) else network_client.create_route_table(route_table_payload).data
 repeat_until_success(lambda: wait_until(network_client, network_client.get_route_table(route_table.id), 'lifecycle_state', 'AVAILABLE'))
 print("✅  Created Route Table ...")
@@ -137,7 +159,7 @@ print("✅  Created Route Table ...")
 # Skip or Create default subnet
 print("🌼  Creating Subnet ...", end="\r")
 subnets = network_client.list_subnets(compartment_id=compartment.id, vcn_id=vcn.id, display_name="default").data
-subnet_payload = {"displayName": "default", "cidrBlock": "10.0.0.0/24", "routeTableId": route_table.id, "securityListIds": [security_list.id], "vcnId": vcn.id, "compartmentId": compartment.id}
+subnet_payload = {"displayName": "default", "cidrBlock": "10.0.0.0/24", "routeTableId": route_table.id, "securityListIds": [security_list.id], "vcnId": vcn.id, "compartmentId": compartment.id, **TAGS}
 subnet = subnets.pop() if len(subnets) else network_client.create_subnet(subnet_payload).data
 repeat_until_success(lambda: wait_until(network_client, network_client.get_subnet(subnet.id), 'lifecycle_state', 'AVAILABLE'))
 print("✅  Created Subnet ...")
