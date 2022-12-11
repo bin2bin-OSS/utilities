@@ -2,7 +2,6 @@ from requests import get, put
 from time import sleep
 from oci import config, wait_until
 from oci import identity, core
-from typing import List
 from argparse import ArgumentParser
 from os import system
 
@@ -134,14 +133,16 @@ availability_domains = identity_client.list_availability_domains(compartment_id=
 for availability_domain in availability_domains:
     availability_domain.shapes = compute_client.list_shapes(oci_config.get("tenancy"), availability_domain=availability_domain.name).data
     availability_domain.free_shapes = [item for item in availability_domain.shapes if item.shape == "VM.Standard.E2.1.Micro"]
+free_availability_domains = [item.name for item in availability_domains if len(item.free_shapes)]
+availability_domain = free_availability_domains[0] if len(free_availability_domains) else availability_domain.name
 print("✅  Fetched Availability Domain ...")
 
 # Update the machine's public ip back to bin2bin
 print("🌼  Updating Machine Config ...", end="\r")
 payload = {
-    "Availability Domains": [item.name for item in availability_domains if len(item.free_shapes)],    
-    "Key Fingerprint": api_key.fingerprint, "User OCID": user.id, "Region": oci_config["region"],
-    "Tenant OCID": oci_config.get("tenancy"), "Subnet OCID": subnet.id, "Compartment OCID": compartment.id}
+    "Availability Domains": availability_domain, "Key Fingerprint": api_key.fingerprint, 
+    "Tenant OCID": oci_config.get("tenancy"), "Subnet OCID": subnet.id, 
+    "Compartment OCID": compartment.id, "User OCID": user.id, "Region": oci_config["region"]}
 put(f"{BASE_API_URL}/custom/integration_details", json={"config": payload}, headers=auth_headers)
 print("✅  Updated Machine Config ...")
 
