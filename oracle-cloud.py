@@ -179,7 +179,7 @@ print("🌼  Updating Machine Config ...", end="\r")
 payload = {
     "Availability Domains": availability_domain, "Key Fingerprint": api_key.fingerprint,
     "Tenant OCID": oci_config.get("tenancy"), "Subnet OCID": subnet.id, 
-    "Group Membership OCID": membership.id, "Security List OCID": security_list.id,
+    "Policy OCID": policy.id, "Security List OCID": security_list.id,
     "Compartment OCID": compartment.id, "User OCID": user.id, "Region": oci_config["region"]}
 put(f"{BASE_API_URL}/custom/integration_details", json={"config": payload}, headers=auth_headers)
 print("✅  Updated Machine Config ...")
