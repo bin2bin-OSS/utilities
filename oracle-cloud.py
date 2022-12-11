@@ -58,6 +58,13 @@ user = users.pop() if len(users) else identity_client.create_user(user_payload).
 repeat_until_success(lambda: wait_until(identity_client, identity_client.get_user(user.id), 'lifecycle_state', 'ACTIVE'))
 print("✅  Created User Successfully ...")
 
+# Updating api key
+print("🌼  Uploading API Key ...", end="\r")
+api_keys = identity_client.list_api_keys(user.id).data
+api_keys = [key for key in api_keys if key.key_value.strip() == public_key.strip()]
+api_key = api_keys.pop() if len(api_keys) else identity_client.upload_api_key(user.id, {"key": public_key}).data
+print("✅  Uploaded API Successfully ...")
+
 # Skip or Creating bin2bin compartment
 print("🌼  Creating Compartment ...", end="\r")
 compartments = identity_client.list_compartments(compartment_id=oci_config.get("tenancy"), name="bin2bin").data
@@ -71,7 +78,7 @@ print("🌼  Creating Policy ...", end="\r")
 policy_payload = {
     "name": "bin2bin-compartment-access", "compartmentId": oci_config.get("tenancy"), "description": ".",
     "statements": [f"Allow any-user to manage all-resources in compartment id {compartment.id} where request.user.id = {user.id}"]}
-policies = identity_client.list_policies(compartment_id=compartment.id, name="bin2bin-compartment-access").data
+policies = identity_client.list_policies(compartment_id=oci_config.get("tenancy"), name="bin2bin-compartment-access").data
 policy = policies.pop() if len(policies) else identity_client.create_policy(policy_payload).data
 repeat_until_success(lambda: wait_until(identity_client, identity_client.get_policy(policy.id), 'lifecycle_state', 'ACTIVE'))
 print("✅  Created Policy ...")
@@ -123,22 +130,19 @@ print("✅  Created Subnet ...")
 
 # Get default availability zone for free instance
 print("🌼  Fetching Availability Domain ...", end="\r")
-availability_domains: List[identity.models.AvailabilityDomain] = identity_client.list_availability_domains(
-    compartment_id=oci_config.get("tenancy")).data
+availability_domains = identity_client.list_availability_domains(compartment_id=oci_config.get("tenancy")).data
 for availability_domain in availability_domains:
-    shapes: List[core.models.Shape] = compute_client.list_shapes(
-        oci_config.get("tenancy"), availability_domain=availability_domain.name).data
-    if len([x for x in shapes if x.shape == "VM.Standard.E2.1.Micro"]):
-        print("✅  Fetched Availability Domain ...")
-        break
+    availability_domain.shapes = compute_client.list_shapes(oci_config.get("tenancy"), availability_domain=availability_domain.name).data
+    availability_domain.free_shapes = [item for item in availability_domain.shapes if item.shape == "VM.Standard.E2.1.Micro"]
+print("✅  Fetched Availability Domain ...")
 
 # Update the machine's public ip back to bin2bin
-print("🌼  Updating Machine IP Address ...", end="\r")
+print("🌼  Updating Machine Config ...", end="\r")
 payload = {
-    "cpu": "0.25", "ram": "1", "public_ip": public_ip, "disk": "100", "swap": "4",
-    "image": os_image.operating_system + " - " + os_image.operating_system_version}
-put(f"{BASE_API_URL}/custom/machine_details",
-    json=payload, headers=auth_headers)
-print("✅  Updated Machine IP Address ...")
+    "Availability Domains": [item.name for item in availability_domains if len(item.free_shapes)],    
+    "Key Fingerprint": api_key.fingerprint, "User OCID": user.id, "Region": oci_config["region"],
+    "Tenant OCID": oci_config.get("tenancy"), "Subnet OCID": subnet.id, "Compartment OCID": compartment.id}
+put(f"{BASE_API_URL}/custom/integration_details", json={"config": payload}, headers=auth_headers)
+print("✅  Updated Machine Config ...")
 
 print("\n😃  Please go back to the bin2bin application to view machine status 😃\n")
