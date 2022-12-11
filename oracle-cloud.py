@@ -64,6 +64,21 @@ api_keys = [key for key in api_keys if key.key_value.strip() == public_key.strip
 api_key = api_keys.pop() if len(api_keys) else identity_client.upload_api_key(user.id, {"key": public_key}).data
 print("✅  Uploaded API Successfully ...")
 
+# Skip or Creating Group
+print("🌼  Creating Group ...", end="\r")
+groups = identity_client.list_groups(compartment_id=oci_config.get("tenancy"), name="bin2bin").data
+group_payload = {"compartmentId": oci_config.get("tenancy"), "name": "bin2bin", "description": "."}
+group = groups.pop() if len(groups) else identity_client.create_group(group_payload).data
+repeat_until_success(lambda: wait_until(identity_client, identity_client.get_group(group.id), 'lifecycle_state', 'ACTIVE'))
+print("✅  Created Group Successfully ...")
+
+# Skip or Creating Group
+print("🌼  Adding User to Group ...", end="\r")
+memberships = identity_client.list_user_group_memberships(compartment_id=oci_config.get("tenancy"), user_id=user.id, group_id=group.id).data
+membership_payload = {"userId": user.id, "groupId": group.id}
+membership = memberships.pop() if len(memberships) else identity_client.add_user_to_group(membership_payload).data
+print("✅  Added User to Group Successfully ...")
+
 # Skip or Creating bin2bin compartment
 print("🌼  Creating Compartment ...", end="\r")
 compartments = identity_client.list_compartments(compartment_id=oci_config.get("tenancy"), name="bin2bin").data
@@ -76,7 +91,7 @@ print("✅  Created Compartment ...")
 print("🌼  Creating Policy ...", end="\r")
 policy_payload = {
     "name": "bin2bin-compartment-access", "compartmentId": oci_config.get("tenancy"), "description": ".",
-    "statements": [f"Allow any-user to manage all-resources in compartment id {compartment.id} where request.user.id = {user.id}"]}
+    "statements": [f"Allow group id {group.id} to manage all-resources in compartment id {compartment.id}"]}
 policies = identity_client.list_policies(compartment_id=oci_config.get("tenancy"), name="bin2bin-compartment-access").data
 policy = policies.pop() if len(policies) else identity_client.create_policy(policy_payload).data
 repeat_until_success(lambda: wait_until(identity_client, identity_client.get_policy(policy.id), 'lifecycle_state', 'ACTIVE'))
@@ -140,8 +155,8 @@ print("✅  Fetched Availability Domain ...")
 # Update the machine's public ip back to bin2bin
 print("🌼  Updating Machine Config ...", end="\r")
 payload = {
-    "Availability Domains": availability_domain, "Key Fingerprint": api_key.fingerprint, 
-    "Tenant OCID": oci_config.get("tenancy"), "Subnet OCID": subnet.id, 
+    "Availability Domains": availability_domain, "Key Fingerprint": api_key.fingerprint,
+    "Tenant OCID": oci_config.get("tenancy"), "Subnet OCID": subnet.id,
     "Compartment OCID": compartment.id, "User OCID": user.id, "Region": oci_config["region"]}
 put(f"{BASE_API_URL}/custom/integration_details", json={"config": payload}, headers=auth_headers)
 print("✅  Updated Machine Config ...")
