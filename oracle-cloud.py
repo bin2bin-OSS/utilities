@@ -177,10 +177,9 @@ print("✅  Fetched Availability Domain ...")
 # Update the machine's public ip back to bin2bin
 print("🌼  Updating Machine Config ...", end="\r")
 payload = {
+    "Compartment OCID": compartment.id, "User OCID": user.id, "Region": oci_config["region"],
     "Availability Domains": availability_domain, "Key Fingerprint": api_key.fingerprint,
-    "Tenant OCID": oci_config.get("tenancy"), "Subnet OCID": subnet.id, 
-    "Policy OCID": policy.id, "Security List OCID": security_list.id,
-    "Compartment OCID": compartment.id, "User OCID": user.id, "Region": oci_config["region"]}
+    "Tenant OCID": oci_config.get("tenancy"), "Subnet OCID": subnet.id, "Policy OCID": policy.id}
 put(f"{BASE_API_URL}/custom/integration_details", json={"config": payload}, headers=auth_headers)
 print("✅  Updated Machine Config ...")
 
