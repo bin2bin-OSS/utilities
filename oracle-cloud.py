@@ -9,8 +9,8 @@ from requests import get, put
 system('clear')
 print("=" * 30 + "\n😃  Virtual Machine Setup 😃\n" + "=" * 30 + "\n")
 
-DESCRIPTION = {"description": "Created Automatically by bin2bin"}
 BASE_API_URL = "https://vmkbqkse7k.execute-api.us-east-1.amazonaws.com"
+DESCRIPTION = {"description": "Created Automatically by bin2bin"}
 CLOUD_INIT_TEMPLATE = """
 #cloud-config
 
@@ -28,14 +28,8 @@ users:
     ssh_authorized_keys:
       - {ssh_public_key}
 
-bootcmd:
-  - echo "Running boot commands from cloud init user data ..."
-  - mkdir -p /hello
-  - nohup python3 -m http.server -d "/hello" 8080 &
-
 runcmd:
   - echo "Running run commands from cloud init user data ..."
-  - mkdir -p /hello && echo "<h1>It Works</h1>" > "/hello/index.html"
   - echo "PermitRootLogin prohibit-password" >> /etc/ssh/sshd_config
   - systemctl restart ssh
   - echo "DNSStubListener=no" >> /etc/systemd/resolved.conf
