@@ -96,7 +96,7 @@ parser = ArgumentParser()
 parser.add_argument('--token', type=str, required=True)
 args = parser.parse_args()
 auth_headers = {"Authorization": "Bearer " + args.token}
-api_url = f"{BASE_API_URL}/custom/machine_details"
+api_url = f"{BASE_API_URL}/custom/machine"
 machine_config = get(api_url, headers=auth_headers).json()
 print("✅  Fetched SSH public keys ...")
 
@@ -223,10 +223,10 @@ print("✅  Fetched Machine IP Address ...")
 print("🌼  Updating Machine IP Address ...", end="\r")
 payload = {
     "Compartment OCID": compartment.id, "Operating System Version": os_image.operating_system_version,
-    "Availability Domain": availability_domain, "Tenant OCID": oci_config.get("tenancy"), 
+    "Availability Domain": availability_domain, "Tenant OCID": oci_config.get("tenancy"),
     "Public IP": public_ip, "Hard Disk Size": "100 gb", "CPU": "AMD based 1/8 OCPU",
     "Operating System": os_image.operating_system, "Region": oci_config["region"], "Total RAM": "1 gb"}
-put(f"{BASE_API_URL}/custom/machine_details",json={"config": payload}, headers=auth_headers)
+put(f"{BASE_API_URL}/custom/machine", json={"config": payload}, headers=auth_headers)
 print("✅  Updated Machine IP Address ...")
 
 print("\n😃  Please go back to the bin2bin application to view machine status 😃\n")
