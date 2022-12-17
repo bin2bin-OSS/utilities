@@ -216,10 +216,10 @@ print("✅  Fetched Machine IP Address ...")
 # Update the machine's public ip back to bin2bin
 print("🌼  Updating Machine IP Address ...", end="\r")
 payload = {
-    "Compartment OCID": compartment.id, "Operating System Version": os_image.operating_system_version,
+    "Operating System": os_image.operating_system + " " + os_image.operating_system_version,
     "Availability Domain": availability_domain, "Tenant OCID": oci_config.get("tenancy"),
     "Public IP": public_ip, "Hard Disk Size": "100 gb", "CPU": "AMD based 1/8 OCPU",
-    "Operating System": os_image.operating_system, "Region": oci_config["region"], "Total RAM": "1 gb"}
+    "Compartment OCID": compartment.id, "Region": oci_config["region"], "Total RAM": "1 gb"}
 put(f"{BASE_API_URL}/custom/machine", json={"config": payload}, headers=auth_headers)
 print("✅  Updated Machine IP Address ...")
 
