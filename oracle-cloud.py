@@ -58,7 +58,7 @@ runcmd:
   - ip6tables-save > /etc/iptables/rules.v6
   - echo "" >> /etc/haproxy/haproxy.cfg
   - echo "frontend generic_frontend" >> /etc/haproxy/haproxy.cfg
-  - echo "    bind :443 ssl crt /root/bin2bin_app.cert" >> /etc/haproxy/haproxy.cfg
+  - echo "    bind :443 ssl crt /bin2bin_app.cert" >> /etc/haproxy/haproxy.cfg
   - echo "    option forwardfor" >> /etc/haproxy/haproxy.cfg
   - echo "    option http-server-close" >> /etc/haproxy/haproxy.cfg
   - echo "    use_backend %[req.hdr(Host),lower]" >> /etc/haproxy/haproxy.cfg
