@@ -29,6 +29,7 @@ users:
       - {ssh_public_key}
 
 runcmd:
+  - mkdir -p /root/install_logs
   - echo "Running run commands from cloud init user data ..."
   - echo "PermitRootLogin prohibit-password" >> /etc/ssh/sshd_config
   - systemctl restart ssh
