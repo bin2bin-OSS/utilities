@@ -32,16 +32,11 @@ runcmd:
   - echo "Running run commands from cloud init user data ..."
   - echo "PermitRootLogin prohibit-password" >> /etc/ssh/sshd_config
   - systemctl restart ssh
-  - echo "DNSStubListener=no" >> /etc/systemd/resolved.conf
-  - systemctl restart systemd-resolved
   - echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf && sysctl -p
   - apt-get update
   - apt-get remove -y unattended-upgrades
-  - apt-get -y install podman wireguard dnsmasq net-tools 
+  - apt-get -y install podman wireguard net-tools 
   - apt-get -y install haproxy iptables-persistent psmisc
-  - rm -f /etc/dnsmasq.conf && echo "bind-interfaces" >> /etc/dnsmasq.conf
-  - echo "listen-address=0.0.0.0" >> /etc/dnsmasq.conf
-  - systemctl restart dnsmasq
   - mkdir -p /etc/wireguard && wg genkey > /etc/wireguard/dummy.key
   - echo "[Interface]" > /etc/wireguard/wg0.conf
   - echo "PrivateKey = $(cat /etc/wireguard/dummy.key)" >> /etc/wireguard/wg0.conf
