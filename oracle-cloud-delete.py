@@ -1,8 +1,9 @@
 from argparse import ArgumentParser
 from oci import identity, core
-from oci import config, wait_until
 from os import system
 from requests import get, delete
+from oci import config, wait_until
+
 system('clear')
 print("=" * 30 + "\n😃  Virtual Machine Deletion 😃\n" + "=" * 30 + "\n")
 

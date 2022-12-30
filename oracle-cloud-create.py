@@ -1,11 +1,11 @@
 from argparse import ArgumentParser
 from base64 import b64encode
-from typing import List
-from oci import identity, core
-from oci import config, wait_until
 from os import system
 from time import sleep
 from requests import get, put
+from oci import identity, core
+from oci import config, wait_until
+
 system('clear')
 print("=" * 30 + "\n😃  Virtual Machine Setup 😃\n" + "=" * 30 + "\n")
 
@@ -211,10 +211,10 @@ print("✅  Fetched Machine IP Address ...")
 # Update the machine's public ip back to bin2bin
 print("🌼  Updating Machine IP Address ...", end="\r")
 payload = {
-    "Operating System": os_image.operating_system + " " + os_image.operating_system_version,
-    "Availability Domain": availability_domain, "Tenant OCID": oci_config.get("tenancy"),
-    "Public IP": public_ip, "Hard Disk Size": "100 gb", "CPU": "AMD based 1/8 OCPU",
-    "Compartment OCID": compartment.id, "Region": oci_config["region"], "Total RAM": "1 gb"}
+    "os": os_image.operating_system + " " + os_image.operating_system_version,
+    "availability_domain": availability_domain, "tenant_ocid": oci_config.get("tenancy"),
+    "public_ip": public_ip, "disk": "100 gb", "cpu": "AMD based 1/8 OCPU",
+    "compartment_ocid": compartment.id, "region": oci_config["region"], "ram": "1 gb"}
 put(f"{BASE_API_URL}/custom/machine", json={"config": payload}, headers=auth_headers)
 print("✅  Updated Machine IP Address ...")
 
